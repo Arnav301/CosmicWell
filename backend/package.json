@@ -15,6 +15,8 @@
   },
   "dependencies": {
     "active-win": "^8.2.1",
-    "get-app-icon": "^1.0.1"
+    "dotenv": "^17.2.3",
+    "get-app-icon": "^1.0.1",
+    "mongodb": "^6.20.0"
   }
 }

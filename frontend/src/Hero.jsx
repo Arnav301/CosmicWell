@@ -24,6 +24,8 @@ function SleepModal({ isOpen, onClose }) {
     }
   };
 
+  
+
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
       <div className="bg-[#181818] border border-gray-700 text-white p-8 rounded-xl shadow-2xl w-full max-w-md relative">
@@ -53,7 +55,9 @@ function SleepModal({ isOpen, onClose }) {
 // MODIFIED StatCard to be a clickable button
 const StatCard = ({ icon, title, value, footerText, footerColor, isPulsing = false, onClick }) => {
   const CardContent = () => (
-    <div className={`bg-[#27272a] p-10 rounded-xl flex-1 flex flex-col h-full justify-between transition-transform duration-200 ${onClick ? 'hover:scale-105' : ''} ${isPulsing ? 'animate-pulse' : ''}`}>
+    <div className={`p-10 rounded-2xl flex-1 flex flex-col h-full justify-between transition-transform duration-200 ${onClick ? 'hover:scale-105' : ''} ${isPulsing ? 'animate-pulse' : ''} 
+      bg-[#202024]/70 backdrop-blur-md border border-[#2a2a2e] shadow-[0_10px_30px_rgba(0,0,0,0.35)]`}
+    >
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-gray-400 text-sm">{title}</p>
@@ -116,7 +120,7 @@ const formatTimeForCard = (seconds) => {
 const AppUsageCard = ({ iconUrl, name, timeInSeconds, totalSeconds }) => {
   const percentage = totalSeconds > 0 ? (timeInSeconds / totalSeconds) * 100 : 0;
   return (
-    <div className="bg-[#27272a] p-5 rounded-lg">
+    <div className="p-5 rounded-2xl bg-[#202024]/70 backdrop-blur-md border border-[#2a2a2e] shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 flex items-center justify-center rounded-lg bg-gray-900">
@@ -158,6 +162,80 @@ const ConnectionStatus = ({ status }) => {
     );
 };
 
+// --- NEW: Goals Modal to set Daily Goals inline ---
+function GoalsModal({ isOpen, onClose, goals, onSave }) {
+  const [localGoals, setLocalGoals] = useState([]);
+  const [draft, setDraft] = useState({ id: '', title: '', type: 'count', target: 1 });
+
+  useEffect(() => {
+    if (isOpen) {
+      setLocalGoals(goals || []);
+      setDraft({ id: '', title: '', type: 'count', target: 1 });
+    }
+  }, [isOpen, goals]);
+
+  const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const addGoal = (e) => {
+    e?.preventDefault?.();
+    const title = (draft.title || '').trim();
+    if (!title) return;
+    const newGoal = { id: uid(), title, type: draft.type, target: Math.max(1, Number(draft.target || 1)), progress: 0 };
+    setLocalGoals([newGoal, ...localGoals]);
+    setDraft({ id: '', title: '', type: 'count', target: 1 });
+  };
+  const updateGoal = (g) => setLocalGoals(localGoals.map(x => x.id === g.id ? g : x));
+  const deleteGoal = (id) => setLocalGoals(localGoals.filter(x => x.id !== id));
+
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+      <div className="bg-[#181818] border border-gray-700 text-white p-6 rounded-xl shadow-2xl w-full max-w-2xl relative">
+        <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-white">
+          <XIcon />
+        </button>
+        <h2 className="text-2xl font-bold mb-2 text-purple-400">Set Daily Goals</h2>
+        <p className="text-gray-400 mb-4">Create or edit your daily targets.</p>
+
+        {/* Add Goal */}
+        <form onSubmit={addGoal} className="bg-[#27272a] p-4 rounded-lg grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">
+          <input className="md:col-span-2 bg-[#18181b] rounded px-3 py-2 outline-none focus:ring-2 focus:ring-purple-600" placeholder="Goal title" value={draft.title} onChange={(e)=>setDraft(d=>({...d,title:e.target.value}))} />
+          <select className="bg-[#18181b] rounded px-3 py-2" value={draft.type} onChange={(e)=>setDraft(d=>({...d,type:e.target.value}))}>
+            <option value="count">Count</option>
+            <option value="minutes">Minutes</option>
+          </select>
+          <input type="number" min={1} className="bg-[#18181b] rounded px-3 py-2" value={draft.target} onChange={(e)=>setDraft(d=>({...d,target:e.target.value}))} />
+          <div className="md:col-span-4 flex justify-end">
+            <button type="submit" className="px-4 py-2 rounded bg-purple-600 hover:bg-purple-500">Add Goal</button>
+          </div>
+        </form>
+
+        {/* List Goals */}
+        <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
+          {localGoals.length === 0 ? (
+            <div className="text-sm text-gray-400">No goals yet. Add your first one above.</div>
+          ) : localGoals.map(g => (
+            <div key={g.id} className="bg-[#27272a] p-3 rounded-lg flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-semibold text-white truncate">{g.title}</p>
+                <p className="text-xs text-gray-400">{g.type === 'minutes' ? 'Minutes' : 'Count'} • Target: {g.target}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="number" min={1} value={g.target} onChange={(e)=>updateGoal({...g, target: Math.max(1, Number(e.target.value||1))})} className="w-20 bg-[#18181b] rounded px-2 py-1 text-sm" />
+                <button onClick={()=>deleteGoal(g.id)} className="px-3 py-1.5 rounded bg-red-600/80 text-white text-sm hover:bg-red-500">Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6 flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 rounded bg-[#3f3f46] hover:bg-[#52525b]">Cancel</button>
+          <button onClick={()=>onSave(localGoals)} className="px-4 py-2 rounded bg-purple-600 hover:bg-purple-500">Save Changes</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 export default function Hero() {
   const [appUsageData, setAppUsageData] = useState({});
@@ -166,6 +244,28 @@ export default function Hero() {
   const [sleepDuration, setSleepDuration] = useState(0);
   const [isSleepModalOpen, setIsSleepModalOpen] = useState(false);
   const [apiStatus, setApiStatus] = useState('Connecting'); // State for connection status
+  // Goals state
+  const [goals, setGoals] = useState([]);
+  const [isGoalsModalOpen, setIsGoalsModalOpen] = useState(false);
+  // Screen history for dashboard analytics
+  const [screenHistory, setScreenHistory] = useState({});
+  const [range, setRange] = useState('7'); // '7' | '30'
+  // Display name from localStorage
+  const [displayName, setDisplayName] = useState('Explorer');
+  useEffect(() => {
+    const load = () => {
+      try {
+        const name = localStorage.getItem('cw_user_name');
+        setDisplayName(name && name.trim() ? name.trim() : 'Explorer');
+      } catch {
+        setDisplayName('Explorer');
+      }
+    };
+    load();
+    const onStorage = (e) => { if (e.key === 'cw_user_name') load(); };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   useEffect(() => {
     // Check for the Electron API after a short delay
@@ -182,26 +282,31 @@ export default function Hero() {
       // Only try to fetch if the API is available
       if (window.electronAPI) {
         try {
-            console.log("DEBUG: Fetching data from backend...");
-            const [usage, lidCount, mindfulness, sleep] = await Promise.all([
-                window.electronAPI.getAppUsage(),
-                window.electronAPI.getLidOpenCount(),
-                window.electronAPI.getMindfulnessData(),
-                window.electronAPI.getSleepData(),
-            ]);
-            
-            console.log("DEBUG: Received usage data:", usage);
-            setAppUsageData(usage || {});
-            setLidOpenCount(lidCount || 0);
-            setMindfulnessData(mindfulness || { time: 0, isActive: false });
-            setSleepDuration(sleep || 0);
+          console.log("DEBUG: Fetching data from backend...");
+          const [usage, lidCount, mindfulness, sleep] = await Promise.all([
+            window.electronAPI.getAppUsage(),
+            window.electronAPI.getLidOpenCount(),
+            window.electronAPI.getMindfulnessData(),
+            window.electronAPI.getSleepData(),
+          ]);
+
+          console.log("DEBUG: Received usage data:", usage);
+          setAppUsageData(usage || {});
+          setLidOpenCount(lidCount || 0);
+          setMindfulnessData(mindfulness || { time: 0, isActive: false });
+          setSleepDuration(sleep || 0);
+          // also fetch screen history
+          if (window.electronAPI.getScreenHistory) {
+            const history = await window.electronAPI.getScreenHistory();
+            setScreenHistory(history || {});
+          }
         } catch (error) {
-            console.error("DEBUG: Error fetching data:", error);
-            setApiStatus('Error');
+          console.error("DEBUG: Error fetching data:", error);
+          setApiStatus('Error');
         }
       }
     };
-    
+
     fetchData();
     const intervalId = setInterval(fetchData, 2000);
 
@@ -218,16 +323,62 @@ export default function Hero() {
   const sortedApps = Object.entries(appUsageData).sort(([, a], [, b]) => b.time - a.time);
   const totalUsage = sortedApps.reduce((acc, [, data]) => acc + data.time, 0);
 
-  const weeklyData = [ { day: 'Mon', hours: 4.2 }, { day: 'Tue', hours: 6.3 }, { day: 'Wed', hours: 3.8 }, { day: 'Thu', hours: 7.1 }, { day: 'Fri', hours: 5.4 }, { day: 'Sat', hours: 6.2 }, { day: 'Sun', hours: 0 } ];
-  const maxHours = 8;
+  // Build series from screenHistory
+  const series = (() => {
+    const days = range === '7' ? 7 : 30;
+    const out = [];
+    const now = new Date();
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      const total = screenHistory[key]?.total || 0;
+      out.push({ label: d.toLocaleDateString(undefined, { weekday: 'short' }), total });
+    }
+    return out;
+  })();
+  const maxVal = Math.max(1, ...series.map(d => d.total));
+
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayTotal = screenHistory[todayKey]?.total || 0;
+  const totalInRange = series.reduce((a,b)=>a + (b.total||0), 0);
+  const avgDaily = totalInRange / Math.max(1, series.length);
+  const bestDay = series.reduce((best, d)=> d.total > (best?.total||0) ? d : best, null) || { label: '-', total: 0 };
+  const dailyTarget = 6 * 3600;
+  const todayPctOfTarget = Math.min(100, Math.round((todayTotal / Math.max(1, dailyTarget)) * 100));
+  const formatClock = (s) => {
+    const sec = Math.max(0, Math.floor(s||0));
+    const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60);
+    const pad = (n) => String(n).padStart(2,'0');
+    return `${pad(h)}:${pad(m)}`;
+  };
+
+  // Load goals on mount
+  useEffect(() => {
+    const loadGoals = async () => {
+      if (window.electronAPI?.getGoals) {
+        const g = await window.electronAPI.getGoals();
+        setGoals(Array.isArray(g) ? g : []);
+      }
+    };
+    loadGoals();
+  }, []);
+
+  const saveGoals = async (next) => {
+    if (window.electronAPI?.saveGoals) {
+      await window.electronAPI.saveGoals(next);
+    }
+    setGoals(next);
+    setIsGoalsModalOpen(false);
+  };
 
   return (
     <>
-      <ConnectionStatus status={apiStatus} />
+      <GoalsModal isOpen={isGoalsModalOpen} onClose={() => setIsGoalsModalOpen(false)} goals={goals} onSave={saveGoals} />
       <SleepModal isOpen={isSleepModalOpen} onClose={() => setIsSleepModalOpen(false)} />
       <div className="max-w-7xl mx-auto px-8 py-12 text-white">
         <header className="mb-12">
-            <h1 className="text-4xl font-bold">Welcome back, <span className="text-purple-400">Alexandra</span></h1>
+            <h1 className="text-4xl font-bold">Welcome back, <span className="text-purple-400">{displayName}</span></h1>
             <p className="text-gray-400 mt-2">Let's explore your digital wellness journey through the cosmos</p>
         </header>
 
@@ -254,33 +405,66 @@ export default function Hero() {
         </section>
 
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
-            <div className="lg:col-span-2 bg-[#27272a] p-8 rounded-lg">
+            <div className="lg:col-span-2 p-8 rounded-2xl bg-[#202024]/70 backdrop-blur-md border border-[#2a2a2e] shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="text-xl font-bold text-purple-400">Screen Time Analytics</h2>
                     <div className="flex items-center gap-2 bg-[#181818] p-1 rounded-lg">
-                        <button className="px-3 py-1 text-sm bg-gray-700 rounded-md">7 days</button>
-                        <button className="px-3 py-1 text-sm text-gray-400">30 days</button>
+                        <button onClick={()=>setRange('7')} className={`px-3 py-1 text-sm rounded-md ${range==='7'?'bg-gray-700 text-white':'text-gray-400'}`}>7 days</button>
+                        <button onClick={()=>setRange('30')} className={`px-3 py-1 text-sm rounded-md ${range==='30'?'bg-gray-700 text-white':'text-gray-400'}`}>30 days</button>
                     </div>
                 </div>
-                <p className="text-gray-400 mb-6">Weekly Overview</p>
-                <div className="flex items-end justify-between h-56">
-                    {weeklyData.map(data => (
-                        <div key={data.day} className="flex flex-col items-center w-12 text-center">
-                            <div className="w-4 bg-gray-700 rounded-t-full flex-grow flex items-end">
-                                <div className="w-full bg-gradient-to-t from-blue-500 to-purple-500 rounded-t-full" style={{ height: `${(data.hours / maxHours) * 100}%` }}></div>
-                            </div>
-                            <p className="text-xs text-gray-400 mt-2">{data.day}</p>
-                            <p className="text-xs text-gray-500 mt-1">{data.hours}h {data.hours > 0 ? `${Math.round((data.hours % 1) * 60)}m` : ''}</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  <div className="rounded-xl p-4 bg-[#202024]/70 border border-[#2a2a2e]">
+                    <div className="text-xs uppercase tracking-wider text-gray-400 mb-1">Today</div>
+                    <div className="text-2xl font-bold">{formatTimeForCard(todayTotal)}</div>
+                    <div className="text-xs text-gray-500 mt-1">{todayPctOfTarget}% of 6h goal</div>
+                  </div>
+                  <div className="rounded-xl p-4 bg-[#202024]/70 border border-[#2a2a2e]">
+                    <div className="text-xs uppercase tracking-wider text-gray-400 mb-1">Average Daily</div>
+                    <div className="text-2xl font-bold">{formatTimeForCard(avgDaily)}</div>
+                    <div className="text-xs text-gray-500 mt-1">based on last {series.length} days</div>
+                  </div>
+                  <div className="rounded-xl p-4 bg-[#202024]/70 border border-[#2a2a2e]">
+                    <div className="text-xs uppercase tracking-wider text-gray-400 mb-1">Best Day</div>
+                    <div className="text-2xl font-bold">{bestDay.label}</div>
+                    <div className="text-xs text-gray-500 mt-1">{formatTimeForCard(bestDay.total)}</div>
+                  </div>
+                </div>
+                <p className="text-gray-400 mb-6">Overview</p>
+                <div className="grid grid-cols-7 md:grid-cols-10 lg:grid-cols-14 gap-3 md:gap-4">
+                  {series.map((d, idx) => (
+                    <div key={idx} className="flex flex-col items-center">
+                      <div className="relative w-full bg-[#1b1b1e] rounded-lg h-44 flex items-end overflow-hidden">
+                        <div className="absolute left-0 right-0" style={{ bottom: `${Math.round((dailyTarget/maxVal)*100)}%` }}>
+                          <div className="h-px bg-[#3a3a3f]/60 w-full" />
                         </div>
-                    ))}
+                        <div
+                          className="w-full rounded-lg bg-gradient-to-t from-purple-600 to-blue-600 transition-[height] duration-500"
+                          style={{ height: `${Math.round((d.total / maxVal) * 100)}%` }}
+                          title={`${d.label} • ${formatTimeForCard(d.total)}`}
+                        />
+                      </div>
+                      <div className="text-xs text-gray-400 mt-2">{d.label}</div>
+                      <div className="text-[10px] text-gray-500">{formatClock(d.total)}</div>
+                    </div>
+                  ))}
                 </div>
             </div>
-            <div className="bg-[#27272a] p-8 rounded-lg flex flex-col">
-                <h2 className="text-xl font-bold mb-6">Daily Goals</h2>
+            <div className="p-8 rounded-2xl flex flex-col bg-[#202024]/70 backdrop-blur-md border border-[#2a2a2e] shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-bold">Daily Goals</h2>
+                  <button className="px-3 py-1.5 text-sm rounded bg-[#3f3f46] hover:bg-[#52525b]" onClick={() => setIsGoalsModalOpen(true)}>Set Goals</button>
+                </div>
                 <div className="flex flex-col justify-around flex-grow">
-                    <GoalProgress title="Screen Time Limit" value={5} max={6} />
-                    <GoalProgress title="Break Reminders" value={8} max={10} unit="" />
-                    <GoalProgress title="Phone-Free Time" value={2} max={2} />
+                  {goals.length === 0 ? (
+                    <div className="flex flex-1 items-center justify-center min-h-[140px]">
+                      <p className="text-gray-400 text-sm">No goals yet. Click "Set Goals" to add.</p>
+                    </div>
+                  ) : (
+                    goals.slice(0,3).map(g => (
+                      <GoalProgress key={g.id} title={g.title} value={Math.min(g.progress || 0, Math.max(1, Number(g.target||1)))} max={Math.max(1, Number(g.target||1))} unit={g.type === 'minutes' ? 'm' : ''} />
+                    ))
+                  )}
                 </div>
             </div>
         </section>

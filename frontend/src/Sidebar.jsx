@@ -33,15 +33,20 @@ const ScrollbarStyles = () => (
 );
 
 
-export default function Sidebar() {
+export default function Sidebar({ currentPage = 'Dashboard', onNavigate, onOpenChange, onDetoxStart, forceOpen = false }) {
   const [isOpen, setIsOpen] = useState(false); // State to control sidebar visibility
+  const [todaySeconds, setTodaySeconds] = useState(0);
+  const [scorePct, setScorePct] = useState(0); // 0-100
 
   // Effect to add mouse move listener to open sidebar
   useEffect(() => {
     const handleMouseMove = (e) => {
       // Open the sidebar if the mouse is near the left edge of the screen
       if (e.clientX < 20) {
-        setIsOpen(true);
+        if (!isOpen) {
+          setIsOpen(true);
+          onOpenChange && onOpenChange(true);
+        }
       }
     };
 
@@ -51,11 +56,66 @@ export default function Sidebar() {
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
     };
+  }, [isOpen, onOpenChange]);
+
+  // Sync external control
+  useEffect(() => {
+    if (forceOpen !== isOpen) {
+      setIsOpen(Boolean(forceOpen));
+      onOpenChange && onOpenChange(Boolean(forceOpen));
+    }
+  }, [forceOpen]);
+
+  // Helpers
+  const formatHM = (s) => {
+    const sec = Math.max(0, Math.floor(s || 0));
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    return `${h}h ${m}m`;
+  };
+  const lastNDaysKeys = (n=7) => {
+    const keys=[]; const now=new Date();
+    for(let i=0;i<n;i++){ const d=new Date(now); d.setDate(now.getDate()-i); keys.push(d.toISOString().slice(0,10)); }
+    return keys.reverse();
+  };
+
+  // Poll backend for screen time and sleep to compute metrics
+  useEffect(() => {
+    let mounted = true;
+    const fetchData = async () => {
+      try {
+        const sh = await window.electronAPI?.getScreenHistory?.();
+        const ss = await window.electronAPI?.sleepStatus?.();
+        if (!mounted) return;
+        const todayKey = new Date().toISOString().slice(0,10);
+        setTodaySeconds(sh?.[todayKey]?.total || 0);
+        // Weekly score from screen-time and sleep
+        const week = lastNDaysKeys(7);
+        const dailyTarget = 6*3600;
+        const screenDaysMet = week.reduce((acc,k)=> acc + ((sh?.[k]?.total||0) <= dailyTarget ? 1:0), 0);
+        const screenPct = Math.round((screenDaysMet/7)*100);
+        const sleepTarget = 8*3600;
+        // map best sleep per day
+        const m = {};
+        (ss?.history||[]).forEach(e=>{
+          const day = (new Date(e.start)).toISOString().slice(0,10);
+          m[day] = Math.max(m[day]||0, Math.max(0, e.duration||0));
+        });
+        const avgSleep = week.reduce((a,k)=> a + (m[k]||0), 0)/7;
+        const sleepPct = Math.max(0, Math.min(100, Math.round((avgSleep / sleepTarget)*100)));
+        const score = Math.round((screenPct*0.35) + (sleepPct*0.65));
+        setScorePct(Math.max(0, Math.min(100, score)));
+      } catch {}
+    };
+    fetchData();
+    const id = setInterval(fetchData, 5000);
+    return () => { mounted = false; clearInterval(id); };
   }, []);
 
   const navItems = [
-    { icon: <DashboardIcon />, name: 'Dashboard', active: true },
+    { icon: <DashboardIcon />, name: 'Dashboard' },
     { icon: <PhoneIcon />, name: 'App Usage' },
+    { icon: <ClockIcon />, name: 'Screen Time' },
     { icon: <ShieldIcon />, name: 'Focus Mode' },
     { icon: <BedIcon />, name: 'Sleep Tracker' },
     { icon: <HeartIcon />, name: 'Mindfulness' },
@@ -63,8 +123,6 @@ export default function Sidebar() {
   ];
 
   const quickActions = [
-    { icon: <PauseIcon />, name: 'Take a Break' },
-    { icon: <MoonIcon />, name: 'Night Mode' },
     { icon: <ZapOffIcon />, name: 'Digital Detox' },
   ];
 
@@ -75,48 +133,61 @@ export default function Sidebar() {
         className={`fixed top-0 left-0 h-screen w-72 bg-[#181818] text-gray-300 p-6 flex flex-col z-50 
                    transition-transform duration-300 ease-in-out 
                    ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
-          onMouseLeave={() => setIsOpen(false)} // This closes the sidebar when the mouse leaves it
+        onMouseLeave={() => {
+          setIsOpen(false);
+          onOpenChange && onOpenChange(false);
+        }}
       >
-        <div className="mb-8">
-          <h2 className="text-sm font-semibold text-purple-400">WELLBEING OVERVIEW</h2>
+        <div className="mb-6 flex items-center gap-3">
+          <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+          </div>
+          <div>
+            <div className="text-sm font-bold text-white leading-tight">CosmicWell</div>
+            <div className="text-[10px] text-gray-400 -mt-0.5">Digital Wellbeing</div>
+          </div>
+        </div>
+        <div className="mb-4">
+          <h2 className="text-xs font-semibold text-purple-400 tracking-wider">WELLBEING OVERVIEW</h2>
         </div>
 
-        {/* --- Scrollable Content Area --- */}
         <div className="flex-1 overflow-y-auto -mr-6 pr-6 custom-scrollbar">
-          {/* --- Health Score Card --- */}
           <div className="bg-[#27272a] p-4 rounded-lg mb-4">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm">Digital Health Score</span>
-              <span className="text-2xl font-bold text-yellow-400">8.7</span>
+              <span className="text-2xl font-bold text-yellow-400">{(scorePct/10).toFixed(1)}</span>
             </div>
             <div className="w-full bg-gray-700 rounded-full h-1.5">
-              <div className="bg-gradient-to-r from-blue-500 to-purple-500 h-1.5 rounded-full" style={{ width: '87%' }}></div>
+              <div className="bg-gradient-to-r from-blue-500 to-purple-500 h-1.5 rounded-full" style={{ width: `${Math.min(100, scorePct)}%` }}></div>
             </div>
           </div>
 
-          {/* --- Screen Time Card --- */}
           <div className="bg-[#27272a] p-4 rounded-lg mb-8">
             <p className="text-sm mb-1">Today's Screen Time</p>
             <div className="flex justify-between items-center">
-              <span className="text-3xl font-bold text-white">5h 23m</span>
-              <div className="flex items-center text-sm text-green-500">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6" /><polyline points="17 18 23 18 23 12" /></svg>
-                <span>12%</span>
-              </div>
+              <span className="text-3xl font-bold text-white">{formatHM(todaySeconds)}</span>
             </div>
           </div>
 
-          {/* --- Navigation --- */}
           <h3 className="text-xs font-semibold text-gray-500 mb-3 tracking-wider">NAVIGATION</h3>
           <nav>
             <ul>
               {navItems.map((item) => (
                 <li key={item.name} className="mb-2">
-                  <a href="#" className={`flex items-center gap-4 p-3 rounded-lg transition-colors ${
-                      item.active 
-                      ? 'bg-[#3f3f46] text-white' 
-                      : 'hover:bg-[#27272a] hover:text-white'
-                    }`}>
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (onNavigate) onNavigate(item.name);
+                    }}
+                    className={`flex items-center gap-4 p-3 rounded-lg transition-colors ${
+                      currentPage === item.name
+                        ? 'bg-[#3f3f46] text-white'
+                        : 'hover:bg-[#27272a] hover:text-white'
+                    }`}
+                  >
                     {item.icon}
                     <span className="font-medium">{item.name}</span>
                   </a>
@@ -125,15 +196,22 @@ export default function Sidebar() {
             </ul>
           </nav>
 
-          {/* --- Quick Actions --- */}
           <div className="mt-8">
             <h3 className="text-xs font-semibold text-gray-500 mb-3 tracking-wider">QUICK ACTIONS</h3>
             <div className="space-y-2">
               {quickActions.map((action) => (
-                 <button key={action.name} className="w-full flex items-center gap-4 p-3 rounded-lg bg-[#27272a] hover:bg-[#3f3f46] transition-colors">
-                   {action.icon}
-                   <span className="font-medium">{action.name}</span>
-                 </button>
+                <button
+                  key={action.name}
+                  className="w-full flex items-center gap-4 p-3 rounded-lg bg-[#27272a] hover:bg-[#3f3f46] transition-colors"
+                  onClick={() => {
+                    onDetoxStart && onDetoxStart();
+                    setIsOpen(false);
+                    onOpenChange && onOpenChange(false);
+                  }}
+                >
+                  {action.icon}
+                  <span className="font-medium">{action.name}</span>
+                </button>
               ))}
             </div>
           </div>
@@ -142,4 +220,3 @@ export default function Sidebar() {
     </>
   );
 }
-

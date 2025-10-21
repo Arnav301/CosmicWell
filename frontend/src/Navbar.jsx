@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 // --- SVG Icon Components (for better readability) ---
 
@@ -38,14 +38,33 @@ const BellIcon = () => (
 );
 
 
+// --- Extra: Hamburger Icon ---
+const HamburgerIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="3" y1="6" x2="21" y2="6" />
+    <line x1="3" y1="12" x2="21" y2="12" />
+    <line x1="3" y1="18" x2="21" y2="18" />
+  </svg>
+);
+
 // --- Main Navbar Component ---
 
-export default function Navbar() {
+export default function Navbar({ user, onSignOut }) {
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef(null);
+  useEffect(() => {
+    const onDocClick = (e) => {
+      if (!profileRef.current) return;
+      if (!profileRef.current.contains(e.target)) setProfileOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, []);
   return (
     <nav className="bg-[#181818] text-gray-200">
       <div className="mx-auto flex max-w-7xl items-center justify-between p-4">
 
-        {/* Left Section: Logo and Branding */}
+        {/* Left Section: Menu + Logo and Branding */}
         <div className="flex items-center gap-3">
           {/* Logo */}
           <a href="#" className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-purple-600">
@@ -61,43 +80,70 @@ export default function Navbar() {
         {/* Center Section: Navigation Links (Hidden on small screens) */}
         <ul className="hidden items-center gap-8 md:flex">
           <li>
-            <a href="#" className="flex items-center gap-2 text-gray-300 transition-colors hover:text-white">
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('app:navigate', { detail: { page: 'Dashboard' } }))}
+              className="flex items-center gap-2 text-gray-300 transition-colors hover:text-white"
+            >
               <HomeIcon />
               Dashboard
-            </a>
+            </button>
           </li>
           <li>
-            <a href="#" className="flex items-center gap-2 text-gray-300 transition-colors hover:text-white">
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('app:navigate', { detail: { page: 'Screen Time' } }))}
+              className="flex items-center gap-2 text-gray-300 transition-colors hover:text-white"
+            >
               <AnalyticsIcon />
               Analytics
-            </a>
+            </button>
           </li>
           <li>
-            <a href="#" className="flex items-center gap-2 text-gray-300 transition-colors hover:text-white">
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('app:navigate', { detail: { page: 'Settings' } }))}
+              className="flex items-center gap-2 text-gray-300 transition-colors hover:text-white"
+            >
               <SettingsIcon />
               Settings
-            </a>
+            </button>
           </li>
         </ul>
 
-        {/* Right Section: Actions and Profile */}
+        {/* Right Section: Notifications and Logout */}
         <div className="flex items-center gap-5">
           {/* Notification Bell */}
           <div className="relative">
-            <button className="text-gray-400 transition-colors hover:text-white">
+            <button className="text-gray-400 transition-colors hover:text-white" title="Notifications">
               <BellIcon />
             </button>
-            {/* Notification Dot */}
             <span className="absolute right-0 top-0 block h-2 w-2 rounded-full bg-yellow-400"></span>
           </div>
-          {/* User Profile Avatar */}
-          <button>
-            <img 
-              className="h-10 w-10 rounded-full border-2 border-purple-500 object-cover" 
-              src="https://placehold.co/40x40/7e22ce/ffffff?text=U" 
-              alt="User profile avatar" 
-            />
-          </button>
+
+          {/* Avatar and Logout (icon only) */}
+          <div className="relative" ref={profileRef}>
+            <button
+              onClick={() => setProfileOpen(v => !v)}
+              className="flex items-center gap-2"
+              aria-haspopup="menu"
+              aria-expanded={profileOpen}
+            >
+              <div className="h-9 w-9 flex items-center justify-center text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-user-icon lucide-user">
+                  <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+              </div>
+            </button>
+            {profileOpen && (
+              <div className="absolute right-0 mt-2 w-40 rounded-md border border-[#2a2a2e] bg-[#1f1f22] shadow-lg z-50">
+                <button
+                  onClick={() => { setProfileOpen(false); onSignOut && onSignOut(); }}
+                  className="w-full text-left px-3 py-2 text-sm text-gray-200 hover:bg-[#2a2a2e] rounded-md"
+                >
+                  Log out
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </nav>

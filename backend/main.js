@@ -275,8 +275,6 @@ function createMainWindow() {
   mainWin.once('ready-to-show', () => {
     console.log('Window ready to show');
     mainWin.show();
-    // Open dev tools for debugging
-    mainWin.webContents.openDevTools();
   });
 
   // Handle page load errors

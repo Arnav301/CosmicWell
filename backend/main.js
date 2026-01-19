@@ -293,52 +293,15 @@ function createMainWindow() {
     });
   } else {
     console.log('Production mode - loading built files');
-    const possiblePaths = [
-      path.join(__dirname, 'frontend/dist/index.html'),
-      path.join(__dirname, 'dist/frontend/index.html'),
-      path.join(process.resourcesPath, 'app.asar/frontend/dist/index.html')
-    ];
-
-    console.log('Trying paths:', possiblePaths);
-
-    const loadUrl = async () => {
-      for (const indexPath of possiblePaths) {
-        try {
-          console.log(`Attempting to load: ${indexPath}`);
-          const exists = await fs.promises.access(indexPath).then(() => true).catch(() => false);
-          console.log(`File exists (${exists}): ${indexPath}`);
-          
-          if (exists) {
-            await mainWin.loadFile(indexPath);
-            console.log(`Successfully loaded: ${indexPath}`);
-            return true;
-          }
-        } catch (err) {
-          console.error(`Failed to load ${indexPath}:`, err);
-        }
-      }
-      
-      // If we get here, all paths failed
-      const errorHtml = `
-        <html><body style="font-family: Arial, sans-serif; padding: 20px;">
-          <h1>Error loading application</h1>
-          <p>Could not find the frontend files. This usually means the build process didn't complete successfully.</p>
-          <h3>Tried the following paths:</h3>
-          <ul>
-            ${possiblePaths.map(p => `<li>${p}</li>`).join('')}
-          </ul>
-          <p>Check the console for more details.</p>
-        </body></html>
-      `;
-      
-      mainWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(errorHtml)}`);
-      return false;
-    };
-
-    loadUrl().then(success => {
-      if (!success) {
-        console.error('Failed to load any of the frontend files');
-      }
+    // In production, the dist folder should be copied to the same level as main.js
+    const indexPath = path.join(__dirname, 'dist', 'index.html');
+    
+    console.log(`Loading production build from: ${indexPath}`);
+    
+    mainWin.loadFile(indexPath).catch(err => {
+      console.error('Failed to load production build:', err);
+      // Fallback to showing an error
+      mainWin.loadURL(`data:text/html,<h1>Error loading app</h1><p>${err.message}</p>`);
     });
   }
   mainWin.on('close', (e) => {

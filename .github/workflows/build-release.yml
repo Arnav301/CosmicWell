@@ -15,15 +15,21 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
+      
+      - name: Clean frontend dependencies
+        working-directory: ./frontend
+        run: |
+          Remove-Item -Force -Recurse "node_modules" -ErrorAction SilentlyContinue
+          Remove-Item -Force "package-lock.json" -ErrorAction SilentlyContinue
       
       - name: Install backend dependencies
         working-directory: ./backend
-        run: npm install --legacy-peer-deps
+        run: npm install
       
       - name: Install frontend dependencies
         working-directory: ./frontend
-        run: npm install --legacy-peer-deps
+        run: npm install
       
       - name: Build frontend
         working-directory: ./frontend

@@ -46,26 +46,37 @@ jobs:
         working-directory: ./backend
         run: npm run dist
       
-      - name: Find installer file
-        id: find-installer
+      - name: Find and prepare installer
+        id: prepare-installer
         shell: bash
         run: |
-          INSTALLER=$(find backend/release -name "*Setup*.exe" -type f | head -1)
-          if [ -n "$INSTALLER" ]; then
-            echo "installer=$INSTALLER" >> $GITHUB_OUTPUT
-            echo "Found installer: $INSTALLER"
-          else
-            echo "Available files in release folder:"
-            find backend/release -type f -name "*.exe" || true
-            echo "Error: No Setup .exe found!"
+          # Find the installer file
+          INSTALLER=$(find backend/release -maxdepth 1 -name "*.exe" -type f | grep -i "setup" | head -1)
+          if [ -z "$INSTALLER" ]; then
+            echo "No Setup .exe found in backend/release!"
+            ls -la backend/release/
             exit 1
-          }
+          fi
+          
+          # Get the version from the tag
+          VERSION="${{ github.ref_name }}"
+          VERSION=${VERSION#v}  # Remove 'v' prefix
+          
+          # Create new filename with correct version
+          NEW_NAME="CosmicWell Setup ${VERSION}.exe"
+          NEW_PATH="backend/release/${NEW_NAME}"
+          
+          # Copy and rename the installer
+          cp "$INSTALLER" "$NEW_PATH"
+          echo "installer=$NEW_PATH" >> $GITHUB_OUTPUT
+          echo "Found and prepared: $NEW_PATH"
+          ls -lh "$NEW_PATH"
       
       - name: Create Release
         uses: softprops/action-gh-release@v1
-        if: steps.find-installer.outputs.installer != ''
+        if: steps.prepare-installer.outputs.installer != ''
         with:
-          files: ${{ steps.find-installer.outputs.installer }}
+          files: ${{ steps.prepare-installer.outputs.installer }}
           draft: false
           prerelease: false
         env:

@@ -49,12 +49,14 @@ jobs:
       - name: Find installer file
         id: find-installer
         run: |
-          $installerPath = Get-ChildItem -Path "backend/release" -Include "*.exe" -Exclude "*Extractor*", "*elevate*" | Select-Object -First 1
+          $installerPath = Get-ChildItem -Path "backend/release" -Filter "*Setup*.exe" | Select-Object -First 1
           if ($installerPath) {
             echo "installer=$($installerPath.FullName)" >> $env:GITHUB_OUTPUT
             Write-Host "Found installer: $($installerPath.FullName)"
           } else {
-            Write-Host "No installer found!"
+            Write-Host "Available files in release folder:"
+            Get-ChildItem -Path "backend/release" -File | ForEach-Object { Write-Host $_.FullName }
+            Write-Host "Error: No Setup .exe found!"
             exit 1
           }
       

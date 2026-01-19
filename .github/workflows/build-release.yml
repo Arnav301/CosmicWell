@@ -44,14 +44,18 @@ jobs:
         working-directory: ./backend
         run: npm run dist
       
-      - name: List release artifacts
-        run: Get-ChildItem -Recurse "backend/release" | ForEach-Object { Write-Host $_.FullName }
+      - name: List built files
+        run: |
+          Write-Host "Release files:"
+          Get-ChildItem -Path "backend/release" -Recurse -Include "*.exe" | ForEach-Object { Write-Host $_.FullName }
       
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - name: Upload Release Assets
+        uses: ncipollo/release-action@v1
         with:
-          files: backend/release/*.exe
+          artifacts: "backend/release/*.exe"
+          tag: ${{ github.ref_name }}
           draft: false
           prerelease: false
+          allowUpdates: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

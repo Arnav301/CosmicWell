@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    permissions:
+      contents: write
     
     steps:
       - uses: actions/checkout@v4
@@ -44,18 +46,24 @@ jobs:
         working-directory: ./backend
         run: npm run dist
       
-      - name: List built files
+      - name: Find installer file
+        id: find-installer
         run: |
-          Write-Host "Release files:"
-          Get-ChildItem -Path "backend/release" -Recurse -Include "*.exe" | ForEach-Object { Write-Host $_.FullName }
+          $installerPath = Get-ChildItem -Path "backend/release" -Include "*.exe" -Exclude "*Extractor*", "*elevate*" | Select-Object -First 1
+          if ($installerPath) {
+            echo "installer=$($installerPath.FullName)" >> $env:GITHUB_OUTPUT
+            Write-Host "Found installer: $($installerPath.FullName)"
+          } else {
+            Write-Host "No installer found!"
+            exit 1
+          }
       
-      - name: Upload Release Assets
-        uses: ncipollo/release-action@v1
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        if: steps.find-installer.outputs.installer != ''
         with:
-          artifacts: "backend/release/*.exe"
-          tag: ${{ github.ref_name }}
+          files: ${{ steps.find-installer.outputs.installer }}
           draft: false
           prerelease: false
-          allowUpdates: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

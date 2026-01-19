@@ -1,0 +1,53 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: npm install --legacy-peer-deps
+      
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm install --legacy-peer-deps
+      
+      - name: Build frontend
+        working-directory: ./frontend
+        run: npm run build
+      
+      - name: Copy frontend build to backend
+        run: |
+          if (Test-Path "backend/dist") { Remove-Item -Recurse "backend/dist" }
+          Copy-Item -Recurse "frontend/dist" "backend/dist"
+      
+      - name: Build and package application
+        working-directory: ./backend
+        run: npm run dist
+      
+      - name: List release artifacts
+        run: Get-ChildItem -Recurse "backend/release" | ForEach-Object { Write-Host $_.FullName }
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            backend/release/**/*.exe
+            backend/release/**/*.msi
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

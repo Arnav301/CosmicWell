@@ -1,8 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// This creates a secure bridge between your Electron backend and React frontend.
-// The frontend can access these functions via `window.electronAPI`.
-contextBridge.exposeInMainWorld('electronAPI', {
+// Create the API object
+const electronAPI = {
   // App Usage
   getAppUsage: () => ipcRenderer.invoke('get-app-usage'),
   
@@ -43,5 +42,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   login: (payload) => ipcRenderer.invoke('auth-login', payload),
   register: (payload) => ipcRenderer.invoke('auth-register', payload),
   logout: () => ipcRenderer.invoke('auth-logout'),
-});
+};
+
+// Expose the API to the renderer process
+if (contextBridge) {
+  // Use contextBridge when it's available (contextIsolation: true)
+  contextBridge.exposeInMainWorld('electronAPI', electronAPI);
+} else {
+  // Fallback for when contextIsolation is disabled
+  window.electronAPI = electronAPI;
+}
 

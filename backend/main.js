@@ -249,19 +249,99 @@ function createLoginWindow() {
 
 
 function createMainWindow() {
-  if (mainWin) return mainWin;
+  console.log('Creating main window...');
+  if (mainWin) {
+    console.log('Main window already exists, showing it');
+    mainWin.show();
+    return mainWin;
+  }
+
+  console.log('Creating new BrowserWindow');
   mainWin = new BrowserWindow({
-    fullscreen: true,
-    frame: false,
+    width: 1200,
+    height: 800,
+    fullscreen: false, // Changed from true to false for debugging
+    frame: true,       // Changed from false to true for debugging
     webPreferences: {
+      nodeIntegration: false,  // Disable nodeIntegration for security
+      contextIsolation: true,  // Enable contextIsolation for security
       preload: path.join(__dirname, 'preload.js'),
+      sandbox: false,          // Required for some native modules to work
     },
+    show: false // Don't show until ready-to-show
   });
+
+  // Show window when ready
+  mainWin.once('ready-to-show', () => {
+    console.log('Window ready to show');
+    mainWin.show();
+    // Open dev tools for debugging
+    mainWin.webContents.openDevTools();
+  });
+
+  // Handle page load errors
+  mainWin.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('Failed to load:', { errorCode, errorDescription });
+  });
+
+  mainWin.webContents.on('did-finish-load', () => {
+    console.log('Window finished loading');
+  });
+
   if (isDev) {
-    mainWin.loadURL('http://localhost:5173');
+    console.log('Loading development URL: http://localhost:5173');
+    mainWin.loadURL('http://localhost:5173').catch(err => {
+      console.error('Failed to load dev URL:', err);
+    });
   } else {
-    const indexPath = path.join(__dirname, '../frontend/dist/index.html');
-    mainWin.loadFile(indexPath);
+    console.log('Production mode - loading built files');
+    const possiblePaths = [
+      path.join(__dirname, 'frontend/dist/index.html'),
+      path.join(__dirname, 'dist/frontend/index.html'),
+      path.join(process.resourcesPath, 'app.asar/frontend/dist/index.html')
+    ];
+
+    console.log('Trying paths:', possiblePaths);
+
+    const loadUrl = async () => {
+      for (const indexPath of possiblePaths) {
+        try {
+          console.log(`Attempting to load: ${indexPath}`);
+          const exists = await fs.promises.access(indexPath).then(() => true).catch(() => false);
+          console.log(`File exists (${exists}): ${indexPath}`);
+          
+          if (exists) {
+            await mainWin.loadFile(indexPath);
+            console.log(`Successfully loaded: ${indexPath}`);
+            return true;
+          }
+        } catch (err) {
+          console.error(`Failed to load ${indexPath}:`, err);
+        }
+      }
+      
+      // If we get here, all paths failed
+      const errorHtml = `
+        <html><body style="font-family: Arial, sans-serif; padding: 20px;">
+          <h1>Error loading application</h1>
+          <p>Could not find the frontend files. This usually means the build process didn't complete successfully.</p>
+          <h3>Tried the following paths:</h3>
+          <ul>
+            ${possiblePaths.map(p => `<li>${p}</li>`).join('')}
+          </ul>
+          <p>Check the console for more details.</p>
+        </body></html>
+      `;
+      
+      mainWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(errorHtml)}`);
+      return false;
+    };
+
+    loadUrl().then(success => {
+      if (!success) {
+        console.error('Failed to load any of the frontend files');
+      }
+    });
   }
   mainWin.on('close', (e) => {
     if (!isQuitting) {

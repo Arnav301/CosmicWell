@@ -1,1 +1,10 @@
 node_modules
+dist
+release
+build
+*.exe
+*.dmg
+*.zip
+*.tar.gz
+
+.env

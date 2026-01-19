@@ -4,14 +4,61 @@
   "main": "main.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "electron ."
+    "start": "cross-env NODE_ENV=production electron .",
+    "dev": "cross-env NODE_ENV=development electron .",
+    "build:frontend": "cd ../frontend && npm install && npm run build",
+    "clean": "rimraf dist build release",
+    "package-only": "electron-packager . CosmicWell --platform=win32 --arch=x64 --out=dist --overwrite --prune=true --asar --icon=assets/icon.ico",
+    "package": "npm run clean && npm run build:frontend && npm run package-only",
+    "pack": "npm run package && electron-builder --dir",
+    "dist": "npm run package && electron-builder",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "build": {
+    "appId": "com.cosmicwell.app",
+    "productName": "CosmicWell",
+    "copyright": "Copyright 2025",
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "dist/**/*",
+      "node_modules/**/*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/.bin",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+    ]
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "devDependencies": {
-    "electron": "^38.1.2"
+    "cross-env": "^10.1.0",
+    "electron": "^38.1.2",
+    "electron-builder": "^26.0.12",
+    "electron-packager": "^17.1.2",
+    "rimraf": "^6.0.1"
   },
   "dependencies": {
     "active-win": "^8.2.1",

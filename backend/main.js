@@ -284,6 +284,10 @@ function createMainWindow() {
 
   mainWin.webContents.on('did-finish-load', () => {
     console.log('Window finished loading');
+    // Open DevTools to see any errors (temporary for debugging)
+    if (!app.isPackaged) {
+      mainWin.webContents.openDevTools();
+    }
   });
 
   if (isDev) {
@@ -297,6 +301,21 @@ function createMainWindow() {
     const indexPath = path.join(__dirname, 'dist', 'index.html');
     
     console.log(`Loading production build from: ${indexPath}`);
+    console.log(`App.isPackaged: ${app.isPackaged}`);
+    console.log(`__dirname: ${__dirname}`);
+    
+    // Check if file exists
+    fs.access(indexPath, fs.constants.F_OK, (err) => {
+      if (err) {
+        console.error(`Index file does not exist at: ${indexPath}`);
+        console.log('Files in __dirname:', fs.readdirSync(__dirname));
+        if (fs.existsSync(path.join(__dirname, 'dist'))) {
+          console.log('Files in dist:', fs.readdirSync(path.join(__dirname, 'dist')));
+        }
+      } else {
+        console.log(`Index file exists at: ${indexPath}`);
+      }
+    });
     
     mainWin.loadFile(indexPath).catch(err => {
       console.error('Failed to load production build:', err);

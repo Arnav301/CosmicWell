@@ -1,13 +1,14 @@
-const { app, BrowserWindow, ipcMain, powerMonitor, nativeTheme, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, powerMonitor, nativeTheme, Tray, Menu, nativeImage, globalShortcut } = require('electron');
 // Load environment variables
 try { require('dotenv').config(); } catch {}
-// MongoDB client
-let MongoClient; try { ({ MongoClient } = require('mongodb')); } catch {}
+// Supabase client
+let createClient; try { ({ createClient } = require('@supabase/supabase-js')); } catch {}
 const path = require('path');
 const crypto = require('crypto');
 const fs = require('fs');
 const fsp = require('fs').promises;
 const activeWin = require('active-win');
+const { exec } = require('child_process');
 
 let appUsage = {};
 let usersFilePath = '';
@@ -27,70 +28,89 @@ let mindfulnessPlaylist = [];
 let mindfulnessSettings = { volume: 0.6, loop: false };
 let mindfulnessFilePath = '';
 
-let screenHistory = {}; 
+let screenHistory = {};
 let screenFilePath = '';
+let iconStore = {};
+let iconFilePath = '';
 let currentDateKey = new Date().toISOString().slice(0,10);
 let lastPersistTs = 0;
 const isDev = !app.isPackaged;
 
-// --- MongoDB Globals ---
-let mongoClient = null;
-let mongoDb = null;
-let colScreen = null;
-let colAppUsage = null;
-let colSleep = null;
-let colUsers = null;
+// --- Focus Mode Lockdown Globals ---
+let focusModeActive = false;
+let focusModeEndTime = null;
+let focusModeTask = '';
+let focusAllowedApps = [];
+let focusFilePath = '';
+let focusEnforcerInterval = null;
+let focusBlockedShortcuts = [
+  'Alt+F4', 'Alt+Tab', 'CommandOrControl+W', 'CommandOrControl+Q',
+  'Alt+Escape', 'CommandOrControl+Alt+Delete', 'Super+D', 'Super+Tab',
+  'CommandOrControl+Shift+Escape', 'Alt+Space'
+];
 
-const MONGODB_URI = process.env.MONGODB_URI || '';
-const MONGODB_DB = process.env.MONGODB_DB || 'cosmicwell';
-const COL_SCREEN = process.env.MONGODB_COLLECTION_SCREEN_TIME || 'screen_time';
-const COL_APP = process.env.MONGODB_COLLECTION_APP_USAGE || 'app_usage';
-const COL_SLEEP = process.env.MONGODB_COLLECTION_SLEEP || 'sleep_entries';
-const COL_USERS = process.env.MONGODB_COLLECTION_USERS || 'users';
+// --- Supabase Globals ---
+let supabase = null;
 
-async function connectMongo() {
-  if (!MongoClient || !MONGODB_URI) return;
-  if (mongoClient) return;
-  const allowInvalid = String(process.env.MONGODB_TLS_ALLOW_INVALID || '').toLowerCase() === 'true';
-  const allowInvalidHost = String(process.env.MONGODB_TLS_ALLOW_INVALID_HOSTNAMES || '').toLowerCase() === 'true';
-  const tlsCAFile = process.env.MONGODB_TLS_CA_FILE || undefined; // absolute path to CA bundle if needed
-  mongoClient = new MongoClient(MONGODB_URI, {
-    ignoreUndefined: true,
-    serverSelectionTimeoutMS: 10000,
-    directConnection: false,
-    tlsAllowInvalidCertificates: allowInvalid,
-    tlsAllowInvalidHostnames: allowInvalidHost,
-    tlsCAFile,
-    serverApi: { version: '1' },
-  });
-  await mongoClient.connect();
-  mongoDb = mongoClient.db(MONGODB_DB);
-  colScreen = mongoDb.collection(COL_SCREEN);
-  colAppUsage = mongoDb.collection(COL_APP);
-  colSleep = mongoDb.collection(COL_SLEEP);
-  colUsers = mongoDb.collection(COL_USERS);
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
+
+async function connectSupabase() {
+  // Skip Supabase in Electron - auth is handled by the server
+  // Personal data (screen time, app usage, sleep) stays local for privacy
+  if (!createClient || !SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    console.log('📦 Electron using local storage only (privacy mode)');
+    return;
+  }
+  
+  if (supabase) return;
+  
+  try {
+    supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    });
+    
+    // Test connection
+    const { error } = await supabase.from('users').select('id').limit(1);
+    if (error) {
+      throw error;
+    }
+    
+    console.log('☁️ Electron Supabase sync enabled (optional)');
+  } catch (e) {
+    // Non-critical - data stays local
+    console.log('📦 Cloud sync unavailable - using local storage (this is fine)');
+    supabase = null;
+  }
 }
 
-async function saveScreenToMongo() {
+async function saveScreenToSupabase() {
   try {
-    if (!colScreen) return;
-    const bulk = colScreen.initializeUnorderedBulkOp();
+    if (!supabase) return;
     for (const [day, meta] of Object.entries(screenHistory || {})) {
-      bulk.find({ day }).upsert().updateOne({ $set: { day, total: Math.max(0, Number(meta?.total||0)) } });
+      await supabase.from('screen_time').upsert({
+        day,
+        total: Math.max(0, Number(meta?.total || 0))
+      }, { onConflict: 'day' });
     }
-    if (bulk.s.currentBatch && bulk.s.currentBatch.operations.length > 0) await bulk.execute();
   } catch (e) { /* ignore */ }
 }
 
-async function saveAppUsageToMongo() {
+async function saveAppUsageToSupabase() {
   try {
-    if (!colAppUsage) return;
+    if (!supabase) return;
     const snapshot = Object.entries(appUsage || {}).map(([name, v]) => ({
       name,
-      time: Math.max(0, Number(v?.time||0)),
+      time: Math.max(0, Number(v?.time || 0)),
       icon: v?.icon || null,
     }));
-    await colAppUsage.insertOne({ at: new Date(), apps: snapshot });
+    await supabase.from('app_usage').insert({
+      recorded_at: new Date().toISOString(),
+      apps: snapshot
+    });
   } catch (e) { /* ignore */ }
 }
 
@@ -141,32 +161,41 @@ setInterval(async () => {
       const appName = window.owner.name;
       const appPath = window.owner.path;
 
+      // Store icon only the first time this app is ever seen across all history
+      if (!iconStore[appName] && iconFilePath) {
+        try {
+          const icon = await app.getFileIcon(appPath);
+          iconStore[appName] = icon.toDataURL();
+          saveIcons().catch(() => {});
+        } catch {}
+      }
+
       if (!appUsage[appName]) {
-        const icon = await app.getFileIcon(appPath);
-        appUsage[appName] = {
-          time: 0,
-          icon: icon.toDataURL(),
-        };
+        appUsage[appName] = { time: 0, icon: iconStore[appName] || null };
       }
       appUsage[appName].time += 1;
-
+      if (!appUsage[appName].icon && iconStore[appName]) {
+        appUsage[appName].icon = iconStore[appName];
+      }
 
       const todayKey = new Date().toISOString().slice(0,10);
       if (todayKey !== currentDateKey) {
         currentDateKey = todayKey;
       }
 
-      if (!screenHistory[currentDateKey]) screenHistory[currentDateKey] = { total: 0 };
+      if (!screenHistory[currentDateKey]) screenHistory[currentDateKey] = { total: 0, apps: {} };
+      if (!screenHistory[currentDateKey].apps) screenHistory[currentDateKey].apps = {};
       screenHistory[currentDateKey].total += 1;
+      screenHistory[currentDateKey].apps[appName] = (screenHistory[currentDateKey].apps[appName] || 0) + 1;
 
       const now = Date.now();
       if (now - lastPersistTs > 60_000 && screenFilePath) {
         lastPersistTs = now;
         // Fire and forget
         saveScreenHistory().catch(() => {});
-        // Also persist to Mongo if available
-        saveScreenToMongo().catch(()=>{});
-        saveAppUsageToMongo().catch(()=>{});
+        // Also persist to Supabase if available
+        saveScreenToSupabase().catch(()=>{});
+        saveAppUsageToSupabase().catch(()=>{});
       }
     }
   } catch (error) {
@@ -260,8 +289,9 @@ function createMainWindow() {
   mainWin = new BrowserWindow({
     width: 1200,
     height: 800,
-    fullscreen: false, // Changed from true to false for debugging
-    frame: true,       // Changed from false to true for debugging
+    minWidth: 900,
+    minHeight: 600,
+    frame: true,       // Show native window frame with min/max/close buttons
     webPreferences: {
       nodeIntegration: false,  // Disable nodeIntegration for security
       contextIsolation: true,  // Enable contextIsolation for security
@@ -271,9 +301,10 @@ function createMainWindow() {
     show: false // Don't show until ready-to-show
   });
 
-  // Show window when ready
+  // Show window maximized when ready
   mainWin.once('ready-to-show', () => {
     console.log('Window ready to show');
+    mainWin.maximize(); // Start maximized
     mainWin.show();
   });
 
@@ -284,10 +315,6 @@ function createMainWindow() {
 
   mainWin.webContents.on('did-finish-load', () => {
     console.log('Window finished loading');
-    // Open DevTools to see any errors (temporary for debugging)
-    if (!app.isPackaged) {
-      mainWin.webContents.openDevTools();
-    }
   });
 
   if (isDev) {
@@ -324,7 +351,7 @@ function createMainWindow() {
     });
   }
   mainWin.on('close', (e) => {
-    if (!isQuitting) {
+    if (!isQuitting && mainWin) {
       e.preventDefault();
       mainWin.hide();
       e.returnValue = false;
@@ -402,6 +429,230 @@ async function loadScreenHistory() {
 async function saveScreenHistory() {
   await fsp.mkdir(path.dirname(screenFilePath), { recursive: true }).catch(() => {});
   await fsp.writeFile(screenFilePath, JSON.stringify(screenHistory, null, 2), 'utf-8');
+}
+
+async function loadIcons() {
+  try {
+    const data = await fsp.readFile(iconFilePath, 'utf-8');
+    const parsed = JSON.parse(data);
+    iconStore = parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (e) {
+    iconStore = {};
+  }
+}
+
+async function saveIcons() {
+  if (!iconFilePath) return;
+  await fsp.mkdir(path.dirname(iconFilePath), { recursive: true }).catch(() => {});
+  await fsp.writeFile(iconFilePath, JSON.stringify(iconStore), 'utf-8');
+}
+
+// --- Focus Mode Lockdown Functions ---
+async function loadFocusSettings() {
+  try {
+    const data = await fsp.readFile(focusFilePath, 'utf-8');
+    const parsed = JSON.parse(data);
+    focusAllowedApps = Array.isArray(parsed.allowedApps) ? parsed.allowedApps : [];
+  } catch (e) {
+    focusAllowedApps = [];
+  }
+}
+
+async function saveFocusSettings() {
+  const payload = { allowedApps: focusAllowedApps };
+  await fsp.mkdir(path.dirname(focusFilePath), { recursive: true }).catch(() => {});
+  await fsp.writeFile(focusFilePath, JSON.stringify(payload, null, 2), 'utf-8');
+}
+
+function registerFocusShortcutBlockers() {
+  // Block dangerous keyboard shortcuts during focus mode
+  focusBlockedShortcuts.forEach(shortcut => {
+    try {
+      globalShortcut.register(shortcut, () => {
+        // Do nothing - block the shortcut
+        console.log(`[Focus Mode] Blocked: ${shortcut}`);
+        return false;
+      });
+    } catch (e) {
+      // Some shortcuts may not be registerable on all platforms
+      console.log(`[Focus Mode] Could not register: ${shortcut}`);
+    }
+  });
+}
+
+function unregisterFocusShortcutBlockers() {
+  focusBlockedShortcuts.forEach(shortcut => {
+    try {
+      globalShortcut.unregister(shortcut);
+    } catch {}
+  });
+}
+
+function startFocusEnforcer() {
+  if (focusEnforcerInterval) clearInterval(focusEnforcerInterval);
+  
+  focusEnforcerInterval = setInterval(async () => {
+    if (!focusModeActive) return;
+    
+    // Check if focus mode should end
+    if (focusModeEndTime && Date.now() >= focusModeEndTime) {
+      await endFocusMode();
+      return;
+    }
+    
+    try {
+      const window = await activeWin();
+      if (window && window.owner && window.owner.name) {
+        const currentApp = window.owner.name.toLowerCase().replace('.exe', '');
+        const isCosmicWell = currentApp.includes('cosmicwell') || currentApp.includes('electron');
+        
+        // Check if current app is allowed
+        const isAllowed = focusAllowedApps.some(app => 
+          currentApp.includes(app.name.toLowerCase().replace('.exe', ''))
+        );
+        
+        if (!isCosmicWell && !isAllowed) {
+          // App is not allowed - minimize it and bring CosmicWell to front
+          if (mainWin && !mainWin.isDestroyed()) {
+            mainWin.show();
+            mainWin.focus();
+            mainWin.setAlwaysOnTop(true, 'screen-saver');
+            
+            // Try to close or minimize the blocked app
+            if (process.platform === 'win32') {
+              // Minimize the blocked window
+              exec(`powershell -Command "(New-Object -ComObject Shell.Application).MinimizeAll()"`, () => {
+                setTimeout(() => {
+                  if (mainWin && !mainWin.isDestroyed()) {
+                    mainWin.show();
+                    mainWin.focus();
+                  }
+                }, 100);
+              });
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[Focus Mode] Enforcer error:', e);
+    }
+  }, 500);
+}
+
+function stopFocusEnforcer() {
+  if (focusEnforcerInterval) {
+    clearInterval(focusEnforcerInterval);
+    focusEnforcerInterval = null;
+  }
+}
+
+async function startFocusMode(durationMinutes, task, allowedApps = []) {
+  if (focusModeActive) return { ok: false, reason: 'already_active' };
+  
+  focusModeActive = true;
+  focusModeEndTime = Date.now() + (durationMinutes * 60 * 1000);
+  focusModeTask = task || 'Focus Session';
+  focusAllowedApps = allowedApps;
+  
+  // Make main window fullscreen and always on top
+  if (mainWin && !mainWin.isDestroyed()) {
+    mainWin.setFullScreen(true);
+    mainWin.setAlwaysOnTop(true, 'screen-saver');
+    mainWin.setClosable(false);
+    mainWin.setMinimizable(false);
+    
+    // Prevent window from being closed
+    mainWin.on('close', focusPreventClose);
+  }
+  
+  // Register shortcut blockers
+  registerFocusShortcutBlockers();
+  
+  // Start the enforcer to check active windows
+  startFocusEnforcer();
+  
+  return { 
+    ok: true, 
+    endTime: focusModeEndTime, 
+    task: focusModeTask,
+    allowedApps: focusAllowedApps
+  };
+}
+
+function focusPreventClose(e) {
+  if (focusModeActive) {
+    e.preventDefault();
+    return false;
+  }
+}
+
+async function endFocusMode() {
+  if (!focusModeActive) return { ok: false, reason: 'not_active' };
+  
+  focusModeActive = false;
+  focusModeEndTime = null;
+  focusModeTask = '';
+  
+  // Stop the enforcer
+  stopFocusEnforcer();
+  
+  // Unregister shortcut blockers
+  unregisterFocusShortcutBlockers();
+  
+  // Restore main window
+  if (mainWin && !mainWin.isDestroyed()) {
+    mainWin.setAlwaysOnTop(false);
+    mainWin.setFullScreen(false);
+    mainWin.setClosable(true);
+    mainWin.setMinimizable(true);
+    mainWin.removeListener('close', focusPreventClose);
+  }
+  
+  return { ok: true };
+}
+
+async function getInstalledApps() {
+  return new Promise((resolve) => {
+    const apps = [];
+    
+    if (process.platform === 'win32') {
+      // Get apps from Start Menu and common program folders
+      const commonPaths = [
+        process.env.ProgramFiles,
+        process.env['ProgramFiles(x86)'],
+        path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+        path.join(process.env.ProgramData, 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+      ].filter(Boolean);
+      
+      // Also get recently used apps from appUsage
+      Object.keys(appUsage).forEach(appName => {
+        if (!apps.some(a => a.name.toLowerCase() === appName.toLowerCase())) {
+          apps.push({
+            name: appName.replace('.exe', ''),
+            icon: appUsage[appName]?.icon || null
+          });
+        }
+      });
+      
+      // Add some common apps manually
+      const commonApps = [
+        'Chrome', 'Firefox', 'Edge', 'Brave', 'Safari',
+        'Visual Studio Code', 'VS Code', 'Notepad', 'Notepad++',
+        'Word', 'Excel', 'PowerPoint', 'Outlook',
+        'Spotify', 'Discord', 'Slack', 'Teams', 'Zoom',
+        'Terminal', 'PowerShell', 'CMD',
+        'File Explorer', 'Calculator', 'Settings'
+      ];
+      
+      commonApps.forEach(appName => {
+        if (!apps.some(a => a.name.toLowerCase() === appName.toLowerCase())) {
+          apps.push({ name: appName, icon: null });
+        }
+      });
+    }
+    
+    resolve(apps.sort((a, b) => a.name.localeCompare(b.name)));
+  });
 }
 
 app.whenReady().then(async () => {
@@ -522,17 +773,54 @@ app.whenReady().then(async () => {
   // Screen Time History Handlers
   const userDataDir = app.getPath('userData');
   screenFilePath = path.join(userDataDir, 'screen-time.json');
+  iconFilePath = path.join(userDataDir, 'app-icons.json');
   usersFilePath = path.join(userDataDir, 'users.json');
   await loadScreenHistory();
+  await loadIcons();
   await ensureUsersFile();
-  ipcMain.handle('get-screen-history', () => structuredClone(screenHistory));
+  ipcMain.handle('get-screen-history', () => ({
+    history: structuredClone(screenHistory),
+    icons: structuredClone(iconStore)
+  }));
   ipcMain.handle('save-screen-history', async () => {
     await saveScreenHistory();
     return { ok: true };
   });
 
-  // Connect to MongoDB if configured
-  try { await connectMongo(); } catch (e) { console.warn('Mongo connect failed:', e?.message || e); }
+  // Focus Mode Lockdown Handlers
+  focusFilePath = path.join(app.getPath('userData'), 'focus-settings.json');
+  await loadFocusSettings();
+  
+  ipcMain.handle('focus-start', async (event, { duration, task, allowedApps }) => {
+    return await startFocusMode(duration, task, allowedApps || []);
+  });
+  
+  ipcMain.handle('focus-end', async () => {
+    return await endFocusMode();
+  });
+  
+  ipcMain.handle('focus-status', () => ({
+    isActive: focusModeActive,
+    endTime: focusModeEndTime,
+    task: focusModeTask,
+    timeRemaining: focusModeEndTime ? Math.max(0, focusModeEndTime - Date.now()) : 0,
+    allowedApps: focusAllowedApps
+  }));
+  
+  ipcMain.handle('focus-get-allowed-apps', () => structuredClone(focusAllowedApps));
+  
+  ipcMain.handle('focus-save-allowed-apps', async (event, apps) => {
+    focusAllowedApps = Array.isArray(apps) ? apps : [];
+    await saveFocusSettings();
+    return { ok: true };
+  });
+  
+  ipcMain.handle('focus-get-installed-apps', async () => {
+    return await getInstalledApps();
+  });
+
+  // Connect to Supabase for optional cloud sync (non-critical)
+  await connectSupabase();
 
   // Auto-start on login and start hidden
   try {
@@ -647,10 +935,9 @@ app.on('window-all-closed', () => {
 app.on('quit', async () => {
   try {
     await Promise.all([
-      saveScreenToMongo().catch(()=>{}),
-      saveAppUsageToMongo().catch(()=>{}),
+      saveScreenToSupabase().catch(()=>{}),
+      saveAppUsageToSupabase().catch(()=>{}),
     ]);
   } catch {}
-  try { if (mongoClient) await mongoClient.close(); } catch {}
 });
 

@@ -1,15 +1,17 @@
-import Background from "./Background"
-import Navbar from "./Navbar"
-import Sidebar from "./Sidebar"
-import Hero from "./Hero"
+import Background from "./components/Background"
+import Navbar from "./components/Navbar"
+import Sidebar from "./components/Sidebar"
+import Hero from "./pages/Hero"
 import { useEffect, useState } from "react"
-import AppUsagePage from "./AppUsage.jsx"
-import SleepTracker from "./SleepTracker.jsx"
-import Mindfulness from "./Mindfulness.jsx"
-import ScreenTime from "./ScreenTime.jsx"
-import Reports from "./Reports.jsx"
-import Auth from "./Auth.jsx"
-import Settings from "./Settings.jsx"
+import AppUsagePage from "./pages/AppUsage.jsx"
+import SleepTracker from "./pages/SleepTracker.jsx"
+import Mindfulness from "./pages/Mindfulness.jsx"
+import ScreenTime from "./pages/ScreenTime.jsx"
+import Auth from "./components/Auth.jsx"
+import Settings from "./pages/Settings.jsx"
+import Notifications from "./pages/Notifications.jsx"
+import FocusMode from "./pages/FocusMode.jsx"
+import { useAuth } from "./context/AuthContext.jsx"
 
 function App() {
   const [currentPage, setCurrentPage] = useState("Dashboard")
@@ -19,21 +21,15 @@ function App() {
   const [showDetoxPrompt, setShowDetoxPrompt] = useState(false)
   const [detoxMinutes, setDetoxMinutes] = useState(15)
   const [nightOverlay, setNightOverlay] = useState(false)
-  const [user, setUser] = useState(null)
   const [authOpen, setAuthOpen] = useState(false)
+  
+  // Use auth context for user state
+  const { user, logout, updateUser } = useAuth()
 
   // Detox countdown ticker
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
-  }, [])
-
-  // Load user from localStorage when main window opens after login
-  useEffect(() => {
-    try {
-      const name = localStorage.getItem('cw_user_name')
-      if (name) setUser({ name })
-    } catch {}
   }, [])
 
   const remaining = detoxUntil ? Math.max(0, detoxUntil - now) : 0
@@ -90,17 +86,7 @@ function App() {
           {/* --- Navbar (Stays at the top) --- */}
           <Navbar
             user={user}
-            onSignOut={async () => {
-              try { localStorage.removeItem('cw_user_name') } catch {}
-              setUser(null)
-              // Ask main process to close this window and show compact login
-              if (window.electronAPI?.logout) {
-                await window.electronAPI.logout()
-              } else {
-                // Fallback in dev browser
-                try { window.location.hash = '#/login' } catch {}
-              }
-            }}
+            onSignOut={logout}
           />
 
           {/* --- Page Content (Scrollable) --- */}
@@ -112,9 +98,10 @@ function App() {
             {currentPage === "Dashboard" && <Hero />}
             {currentPage === "App Usage" && <AppUsagePage />}
             {currentPage === "Screen Time" && <ScreenTime />}
+            {currentPage === "Focus Mode" && <FocusMode />}
             {currentPage === "Sleep Tracker" && <SleepTracker />}
             {currentPage === "Mindfulness" && <Mindfulness />}
-            {currentPage === "Reports" && <Reports />}
+            {currentPage === "Notifications" && <Notifications />}
             {currentPage === "Settings" && <Settings />}
             
           </div>
@@ -165,7 +152,7 @@ function App() {
           )}
 
           {/* Auth Modal */}
-          <Auth isOpen={authOpen} onClose={() => setAuthOpen(false)} onAuthed={setUser} />
+          <Auth isOpen={authOpen} onClose={() => setAuthOpen(false)} onAuthed={updateUser} />
 
         </main>
       </div>

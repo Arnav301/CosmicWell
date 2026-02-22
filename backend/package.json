@@ -1,11 +1,14 @@
 {
-  "name": "electron",
+  "name": "cosmicwell-backend",
   "version": "1.0.0",
   "main": "main.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "cross-env NODE_ENV=production electron .",
-    "dev": "cross-env NODE_ENV=development electron .",
+    "start": "concurrently -k -n server,frontend,app -c blue,green,yellow \"npm run server\" \"cd ../frontend && npm run dev\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
+    "start:prod": "cross-env NODE_ENV=production electron .",
+    "dev": "concurrently \"npm run server:dev\" \"cross-env NODE_ENV=development electron .\"",
+    "server": "node server/server.js",
+    "server:dev": "cross-env NODE_ENV=development node server/server.js",
     "build:frontend": "cd ../frontend && npm install && npm run build",
     "clean": "rimraf dist build release",
     "package-only": "electron-packager . CosmicWell --platform=win32 --arch=x64 --out=dist --overwrite --prune=true --asar --icon=assets/icon.ico",
@@ -36,6 +39,7 @@
       "main.js",
       "preload.js",
       "index.html",
+      "server/**/*",
       "dist/**/*",
       "node_modules/**/*",
       "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
@@ -54,16 +58,25 @@
   "license": "ISC",
   "description": "",
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
-    "electron": "^38.1.2",
+    "electron": "^38.8.0",
     "electron-builder": "^26.0.12",
     "electron-packager": "^17.1.2",
-    "rimraf": "^6.0.1"
+    "rimraf": "^6.0.1",
+    "wait-on": "^9.0.4"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.97.0",
     "active-win": "^8.2.1",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.6",
     "dotenv": "^17.2.3",
+    "express": "^4.22.1",
+    "express-rate-limit": "^7.5.1",
     "get-app-icon": "^1.0.1",
-    "mongodb": "^6.20.0"
+    "helmet": "^7.2.0",
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "^1.10.1"
   }
 }

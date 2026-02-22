@@ -12,7 +12,8 @@
   let sleepHistory = [];
 
   const todayKey = () => new Date().toISOString().slice(0,10);
-  const screenHistory = { [todayKey()]: { total: 0 } };
+  const screenHistory = { [todayKey()]: { total: 0, apps: {} } };
+  const iconStore = {};
   const apps = {};
 
   window.electronAPI = {
@@ -33,7 +34,7 @@
     async saveGoals(next) { goals = Array.isArray(next) ? next : []; return { ok: true }; },
 
     // Screen time history
-    async getScreenHistory() { return screenHistory; },
+    async getScreenHistory() { return { history: screenHistory, icons: iconStore }; },
 
     // Sleep tracker API
     async sleepStatus() { return { isActive: false, start: null, history: sleepHistory }; },

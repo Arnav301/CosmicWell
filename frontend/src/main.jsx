@@ -1,11 +1,13 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import './electronDevShim.js'
+import './lib/electronDevShim.js'
 import App from './App.jsx'
 import React, { useEffect, useState } from 'react'
-import LoginPage from './LoginPage.jsx'
-import RegisterPage from './RegisterPage.jsx'
+import LoginPage from './pages/LoginPage.jsx'
+import RegisterPage from './pages/RegisterPage.jsx'
+import LogoutRoute from './pages/LogoutRoute.jsx'
+import { AuthProvider } from './context/AuthContext.jsx'
 
 function RootSwitcher(){
   const [hash, setHash] = useState(window.location.hash);
@@ -16,11 +18,14 @@ function RootSwitcher(){
   }, []);
   const isLogin = hash.startsWith('#/login');
   const isRegister = hash.startsWith('#/register');
-  return isLogin ? <LoginPage/> : isRegister ? <RegisterPage/> : <App/>;
+  const isLogout = hash.startsWith('#/logout');
+  return isLogin ? <LoginPage/> : isRegister ? <RegisterPage/> : isLogout ? <LogoutRoute/> : <App/>;
 }
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <RootSwitcher />
+    <AuthProvider>
+      <RootSwitcher />
+    </AuthProvider>
   </StrictMode>,
 )

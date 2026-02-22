@@ -249,7 +249,9 @@ export default function Hero() {
   const [isGoalsModalOpen, setIsGoalsModalOpen] = useState(false);
   // Screen history for dashboard analytics
   const [screenHistory, setScreenHistory] = useState({});
+  const [iconStore, setIconStore] = useState({});
   const [range, setRange] = useState('7'); // '7' | '30'
+  const [selectedDate, setSelectedDate] = useState(null); // null = live/today, string = historical date key
   // Display name from localStorage
   const [displayName, setDisplayName] = useState('Explorer');
   useEffect(() => {
@@ -297,8 +299,13 @@ export default function Hero() {
           setSleepDuration(sleep || 0);
           // also fetch screen history
           if (window.electronAPI.getScreenHistory) {
-            const history = await window.electronAPI.getScreenHistory();
-            setScreenHistory(history || {});
+            const histResult = await window.electronAPI.getScreenHistory();
+            if (histResult && histResult.history) {
+              setScreenHistory(histResult.history || {});
+              setIconStore(histResult.icons || {});
+            } else {
+              setScreenHistory(histResult || {}); // backward compat with old format
+            }
           }
         } catch (error) {
           console.error("DEBUG: Error fetching data:", error);
@@ -333,7 +340,7 @@ export default function Hero() {
       d.setDate(now.getDate() - i);
       const key = d.toISOString().slice(0, 10);
       const total = screenHistory[key]?.total || 0;
-      out.push({ label: d.toLocaleDateString(undefined, { weekday: 'short' }), total });
+      out.push({ label: d.toLocaleDateString(undefined, { weekday: 'short' }), total, dateKey: key });
     }
     return out;
   })();
@@ -341,6 +348,22 @@ export default function Hero() {
 
   const todayKey = new Date().toISOString().slice(0, 10);
   const todayTotal = screenHistory[todayKey]?.total || 0;
+
+  // Derived display data — switches between live data and selected historical date
+  const isViewingHistory = selectedDate !== null && selectedDate !== todayKey;
+  const viewedTotal = isViewingHistory ? (screenHistory[selectedDate]?.total || 0) : todayTotal;
+  const viewedApps = isViewingHistory
+    ? Object.entries(screenHistory[selectedDate]?.apps || {})
+        .map(([name, time]) => [name, { time, icon: iconStore[name] || null }])
+        .sort(([, a], [, b]) => b.time - a.time)
+    : sortedApps;
+  const viewedTotalUsage = isViewingHistory
+    ? viewedApps.reduce((acc, [, d]) => acc + d.time, 0)
+    : totalUsage;
+  const viewedDateLabel = isViewingHistory
+    ? new Date(selectedDate + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+    : null;
+
   const totalInRange = series.reduce((a,b)=>a + (b.total||0), 0);
   const avgDaily = totalInRange / Math.max(1, series.length);
   const bestDay = series.reduce((best, d)=> d.total > (best?.total||0) ? d : best, null) || { label: '-', total: 0 };
@@ -377,13 +400,33 @@ export default function Hero() {
       <GoalsModal isOpen={isGoalsModalOpen} onClose={() => setIsGoalsModalOpen(false)} goals={goals} onSave={saveGoals} />
       <SleepModal isOpen={isSleepModalOpen} onClose={() => setIsSleepModalOpen(false)} />
       <div className="max-w-7xl mx-auto px-8 py-12 text-white">
+        {isViewingHistory && (
+          <div className="mb-6 flex items-center justify-between px-5 py-3 rounded-xl bg-purple-600/20 border border-purple-500/40 text-sm">
+            <div className="flex items-center gap-2 text-purple-200">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              Viewing data for <span className="font-semibold text-white">{viewedDateLabel}</span>
+            </div>
+            <button
+              onClick={() => setSelectedDate(null)}
+              className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium transition-colors"
+            >
+              ← Switch to Today
+            </button>
+          </div>
+        )}
         <header className="mb-12">
             <h1 className="text-4xl font-bold">Welcome back, <span className="text-purple-400">{displayName}</span></h1>
             <p className="text-gray-400 mt-2">Let's explore your digital wellness journey through the cosmos</p>
         </header>
 
         <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
-            <StatCard icon={<ScreenTimeIcon />} title="Screen Time Today" value={formatTimeForCard(totalUsage)} footerText="Live tracking active" footerColor="text-gray-400" />
+            <StatCard
+              icon={<ScreenTimeIcon />}
+              title={isViewingHistory ? 'Screen Time' : 'Screen Time Today'}
+              value={formatTimeForCard(viewedTotal)}
+              footerText={isViewingHistory ? viewedDateLabel : 'Live tracking active'}
+              footerColor={isViewingHistory ? 'text-purple-400' : 'text-gray-400'}
+            />
             <StatCard icon={<LaptopIcon />} title="Laptop Opens" value={lidOpenCount} footerText="Today's count" footerColor="text-gray-400" />
             <StatCard 
                 icon={<MindfulnessIcon />} 
@@ -430,24 +473,42 @@ export default function Hero() {
                     <div className="text-xs text-gray-500 mt-1">{formatTimeForCard(bestDay.total)}</div>
                   </div>
                 </div>
-                <p className="text-gray-400 mb-6">Overview</p>
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-gray-400">Overview</p>
+                  <p className="text-xs text-gray-500">Click a bar to view that day's activity</p>
+                </div>
                 <div className="grid grid-cols-7 md:grid-cols-10 lg:grid-cols-14 gap-3 md:gap-4">
-                  {series.map((d, idx) => (
-                    <div key={idx} className="flex flex-col items-center">
-                      <div className="relative w-full bg-[#1b1b1e] rounded-lg h-44 flex items-end overflow-hidden">
-                        <div className="absolute left-0 right-0" style={{ bottom: `${Math.round((dailyTarget/maxVal)*100)}%` }}>
-                          <div className="h-px bg-[#3a3a3f]/60 w-full" />
+                  {series.map((d, idx) => {
+                    const isSelected = selectedDate === d.dateKey;
+                    return (
+                      <div
+                        key={idx}
+                        className="flex flex-col items-center cursor-pointer group"
+                        onClick={() => setSelectedDate(isSelected ? null : d.dateKey)}
+                        title={`${d.label} — ${formatTimeForCard(d.total)} — Click to view`}
+                      >
+                        <div className={`relative w-full rounded-lg h-44 flex items-end overflow-hidden transition-all duration-200 ${
+                          isSelected ? 'ring-1 ring-purple-400 bg-purple-900/40' : 'bg-[#1b1b1e] group-hover:bg-[#252529]'
+                        }`}>
+                          <div className="absolute left-0 right-0" style={{ bottom: `${Math.round((dailyTarget/maxVal)*100)}%` }}>
+                            <div className="h-px bg-[#3a3a3f]/60 w-full" />
+                          </div>
+                          <div
+                            className={`w-full rounded-lg transition-[height] duration-500 ${
+                              isSelected
+                                ? 'bg-gradient-to-t from-yellow-500 to-orange-400'
+                                : 'bg-gradient-to-t from-purple-600 to-blue-600 group-hover:from-purple-500 group-hover:to-blue-500'
+                            }`}
+                            style={{ height: `${Math.round((d.total / maxVal) * 100)}%` }}
+                          />
                         </div>
-                        <div
-                          className="w-full rounded-lg bg-gradient-to-t from-purple-600 to-blue-600 transition-[height] duration-500"
-                          style={{ height: `${Math.round((d.total / maxVal) * 100)}%` }}
-                          title={`${d.label} • ${formatTimeForCard(d.total)}`}
-                        />
+                        <div className={`text-xs mt-2 transition-colors ${
+                          isSelected ? 'text-yellow-400 font-semibold' : 'text-gray-400 group-hover:text-gray-200'
+                        }`}>{d.label}</div>
+                        <div className="text-[10px] text-gray-500">{formatClock(d.total)}</div>
                       </div>
-                      <div className="text-xs text-gray-400 mt-2">{d.label}</div>
-                      <div className="text-[10px] text-gray-500">{formatClock(d.total)}</div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
             </div>
             <div className="p-8 rounded-2xl flex flex-col bg-[#202024]/70 backdrop-blur-md border border-[#2a2a2e] shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
@@ -470,22 +531,34 @@ export default function Hero() {
         </section>
 
         <section>
-            <h2 className="text-2xl font-bold mb-6 text-yellow-400">Most Used Applications</h2>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-yellow-400">
+                {isViewingHistory ? `Top Apps — ${viewedDateLabel}` : 'Most Used Applications'}
+              </h2>
+              {isViewingHistory && (
+                <button
+                  onClick={() => setSelectedDate(null)}
+                  className="text-xs text-purple-400 hover:text-purple-300 transition-colors"
+                >
+                  ← Back to today
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {sortedApps.length > 0 ? (
-                    sortedApps.slice(0, 6).map(([appName, appData]) => (
-                        <AppUsageCard 
+                {viewedApps.length > 0 ? (
+                    viewedApps.slice(0, 6).map(([appName, appData]) => (
+                        <AppUsageCard
                             key={appName}
                             name={appName.replace('.exe', '')}
                             iconUrl={appData.icon}
                             timeInSeconds={appData.time}
-                            totalSeconds={totalUsage}
+                            totalSeconds={viewedTotalUsage}
                         />
                     ))
                 ) : (
                     <NoUsagePlaceholder />
                 )}
-            </div> 
+            </div>
         </section>
       </div>
     </>

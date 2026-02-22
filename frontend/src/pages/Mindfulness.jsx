@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import tune from './assets/tune.mp3';
+import tune from '../assets/tune.mp3';
 
 function formatHMS(totalSeconds) {
   const s = Math.max(0, Math.floor(totalSeconds || 0));

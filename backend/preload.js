@@ -42,6 +42,14 @@ const electronAPI = {
   login: (payload) => ipcRenderer.invoke('auth-login', payload),
   register: (payload) => ipcRenderer.invoke('auth-register', payload),
   logout: () => ipcRenderer.invoke('auth-logout'),
+
+  // Focus Mode Lockdown APIs
+  focusStart: (payload) => ipcRenderer.invoke('focus-start', payload),
+  focusEnd: () => ipcRenderer.invoke('focus-end'),
+  focusStatus: () => ipcRenderer.invoke('focus-status'),
+  focusGetAllowedApps: () => ipcRenderer.invoke('focus-get-allowed-apps'),
+  focusSaveAllowedApps: (apps) => ipcRenderer.invoke('focus-save-allowed-apps', apps),
+  focusGetInstalledApps: () => ipcRenderer.invoke('focus-get-installed-apps'),
 };
 
 // Expose the API to the renderer process

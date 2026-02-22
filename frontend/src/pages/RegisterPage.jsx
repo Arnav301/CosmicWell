@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { authAPI } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 
 function SteamLikeCard({ children }){
   return (
@@ -21,6 +23,7 @@ function SteamMark(){
 }
 
 export default function RegisterPage(){
+  const { register: authRegisterAction } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [regForm, setRegForm] = useState({ email:'', username:'', password:'' });
@@ -34,18 +37,52 @@ export default function RegisterPage(){
       const email = (regForm.email||'').trim();
       if (!email || !username || !regForm.password){
         setError('Please fill email, account name and password');
+        setLoading(false);
         return;
       }
-      try { localStorage.setItem('cw_user_name', username); } catch {}
-      const res = await window.electronAPI?.register?.({ ...regForm, email, username });
-      if (!res?.ok) setError(res?.message || 'Registration failed');
-      // On success, main process may navigate/close window
+      
+      // Try backend API first
+      try {
+        const response = await authRegisterAction({ 
+          email, 
+          username, 
+          password: regForm.password 
+        });
+        
+        if (response.ok && response.user) {
+          localStorage.setItem('cw_user_name', response);
+          localStorage.setItem('cw_user_name', response.user.username || username);
+          
+          // If running in Electron, notify the main process
+          if (window.electronAPI?.register) {
+            await window.electronAPI.register({ ...regForm, email, username });
+          }
+          
+          // Redirect to main app
+          window.location.hash = '';
+          return;
+        }
+        setError(response.message || 'Registration failed');
+      } catch (apiErr) {
+        // Fallback to Electron API only
+        if (window.electronAPI?.register) {
+          localStorage.setItem('cw_user_name', username);
+          const res = await window.electronAPI.register({ ...regForm, email, username });
+          if (res?.ok) {
+            window.location.hash = '';
+            return;
+          }
+          setError(res?.message || 'Registration failed');
+        } else {
+          setError(apiErr.message || 'Registration failed');
+        }
+      }
     } catch { setError('Registration failed'); }
     finally { setLoading(false); }
   };
 
   return (
-    <div className="bg-[#0e1118] rounded-2xl shadow-xl flex items-center justify-center overflow-hidden">
+    <div className="min-h-screen w-full bg-[#0e1118] flex items-center justify-center overflow-hidden">
       <SteamLikeCard>
         <div className="flex items-center justify-between px-6 py-3 border-b border-[#2a2a2e]">
           <div className="flex items-center gap-3">
@@ -75,6 +112,7 @@ export default function RegisterPage(){
               <div>
                 <label htmlFor="reg-username" className="block text-[11px] uppercase tracking-wide text-gray-400 mb-1">Account name</label>
                 <input id="reg-username" placeholder="Choose a username" value={regForm.username} onChange={(e)=>setRegForm(f=>({...f,username:e.target.value}))} className="w-full h-11 rounded-lg bg-[#27272a] text-sm placeholder:text-gray-400 ring-1 ring-gray-600 px-3 outline-none focus:ring-2 focus:ring-purple-600" />
+                <div className="mt-1 text-[10px] text-gray-500">3-30 characters, letters, numbers, underscores only</div>
               </div>
               <div>
                 <label htmlFor="reg-password" className="block text-[11px] uppercase tracking-wide text-gray-400 mb-1">Password</label>
@@ -83,6 +121,12 @@ export default function RegisterPage(){
                   <button type="button" onClick={()=>setShowPwd(v=>!v)} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 text-xs">
                     {showPwd ? 'Hide' : 'Show'}
                   </button>
+                </div>
+                <div className="mt-2 text-[10px] text-gray-500 space-y-0.5">
+                  <div className={regForm.password.length >= 8 ? 'text-green-400' : ''}></div>
+                  <div className={/[A-Z]/.test(regForm.password) ? 'text-green-400' : ''}></div>
+                  <div className={/[a-z]/.test(regForm.password) ? 'text-green-400' : ''}>• One lowercase letter</div>
+                  <div className={/[0-9]/.test(regForm.password) ? 'text-green-400' : ''}>• One number</div>
                 </div>
               </div>
               {error && <div className="text-xs text-red-400">{error}</div>}

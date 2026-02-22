@@ -37,7 +37,9 @@ export default function ScreenTime() {
   useEffect(() => {
     let mounted = true;
     const fetcher = async () => {
-      const h = await window.electronAPI?.getScreenHistory?.();
+      const raw = await window.electronAPI?.getScreenHistory?.();
+      // Handle both new format { history, icons } and old plain-object format
+      const h = raw?.history ?? raw ?? {};
       if (mounted && h) setHistory(h);
       const a = await window.electronAPI?.getAppUsage?.();
       if (mounted && a) setApps(a);

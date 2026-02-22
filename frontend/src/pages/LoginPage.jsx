@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { authAPI } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 
 function SteamLikeCard({ children }){
   return (
@@ -25,6 +27,7 @@ function SteamMark(){
 }
 
 export default function LoginPage(){
+  const { login: authLoginAction } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [loginForm, setLoginForm] = useState({ username:'', password:'', remember:false });
@@ -37,19 +40,65 @@ export default function LoginPage(){
       const user = (loginForm.username||'').trim();
       if (!user || !loginForm.password){
         setError('Please enter both account name and password');
+        setLoading(false);
         return;
       }
-      try { localStorage.setItem('cw_user_name', user); } catch {}
-      const res = await window.electronAPI?.login?.({ ...loginForm, username: user });
-      if (!res?.ok) setError(res?.message || 'Invalid credentials');
-      // On success, the main process will close this window and open the main one.
+      
+      let backendError = null;
+      
+      // Try backend API first
+      try {
+        console.log('[Login] Trying backend API...');
+        const response = await authLoginAction({ 
+          username: user, 
+          password: loginForm.password 
+        });
+        
+        if (response.ok && response.user) {
+          console.log('[Login] Backend API success');
+          localStorage.setItem('cw_user_name', response.user.username || user);
+          
+          // If running in Electron, notify the main process
+          if (window.electronAPI?.login) {
+            await window.electronAPI.login({ ...loginForm, username: user });
+          }
+          
+          // ALWAYS redirect to home in case the window doesn't close (web / shim)
+          window.location.hash = '';
+          return;
+        }
+        backendError = response.message || 'Invalid credentials';
+      } catch (apiErr) {
+        console.log('[Login] Backend API failed:', apiErr.message);
+        backendError = apiErr.message || 'Server unavailable';
+      }
+      
+      // Fallback to Electron local auth (if backend failed and running in Electron)
+      console.log('[Login] Checking Electron fallback, electronAPI:', !!window.electronAPI);
+      if (window.electronAPI?.login) {
+        console.log('[Login] Trying Electron local auth...');
+        const res = await window.electronAPI.login({ ...loginForm, username: user });
+        console.log('[Login] Electron result:', JSON.stringify(res));
+        if (res?.ok) {
+          console.log('[Login] Electron auth SUCCESS - opening main window');
+          localStorage.setItem('cw_user_name', user);
+          window.location.hash = ''; // ensure redirect in web-shim
+          return; // Electron login succeeded
+        }
+        // Both failed - show Electron error (more specific for local auth)
+        console.log('[Login] Electron auth FAILED:', res?.message);
+        setError(res?.message || backendError || 'Invalid credentials');
+      } else {
+        // Not in Electron, show backend error
+        setError(backendError);
+      }
     } catch { setError('Login failed'); }
     finally { setLoading(false); }
   };
   // Registration flow removed per request
 
   return (
-    <div className="bg-[#0e1118] rounded-2xl shadow-xl flex items-center justify-center overflow-hidden">
+    <div className="min-h-screen w-full bg-[#0e1118] flex items-center justify-center overflow-hidden">
       <SteamLikeCard>
         <div className="flex items-center justify-between px-6 py-3 border-b border-[#2a2a2e]">
           <div className="flex items-center gap-3">
@@ -112,7 +161,7 @@ export default function LoginPage(){
               <div className="w-48 h-48 bg-[radial-gradient(#000_1px,transparent_1px)] [background-size:10px_10px] rounded-lg" />
             </div>
             <div className="text-xs text-gray-400 mt-3 text-center">Scan with your mobile app to sign in securely.</div>
-            <div className="text-xs text-gray-400 mt-4 text-center">Don’t have an account? <span className="underline text-purple-400 cursor-pointer" onClick={()=>{ window.location.hash = '#/register'; }}>Create a Free Account</span></div>
+            <div className="text-xs text-gray-400 mt-4 text-center">Don't have an account? <span className="underline text-purple-400 cursor-pointer" onClick={()=>{ window.location.hash = '#/register'; }}>Create a Free Account</span></div>
           </div>
         </div>
       </SteamLikeCard>

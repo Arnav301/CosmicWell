@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { authAPI } from '../lib/api';
 
 function CloseIcon(){
   return (
@@ -26,20 +27,66 @@ export default function Auth({ isOpen, onClose, onAuthed }){
     e?.preventDefault?.();
     setError(''); setLoading(true);
     try{
-      const res = await window.electronAPI?.login?.(loginForm);
-      if (res?.ok){ onAuthed?.(res.user); onClose?.(); }
-      else setError(res?.message || 'Invalid credentials');
-    }catch{ setError('Login failed'); }
+      // Try backend API first, fall back to Electron API
+      const response = await authAPI.login({ 
+        username: loginForm.username, 
+        password: loginForm.password 
+      });
+      
+      if (response.success && response.data?.user) {
+        onAuthed?.(response.data.user);
+        onClose?.();
+      } else {
+        setError(response.message || 'Invalid credentials');
+      }
+    } catch(err) {
+      // Fallback to Electron API if backend fails
+      if (window.electronAPI?.login) {
+        try {
+          const res = await window.electronAPI.login(loginForm);
+          if (res?.ok) { onAuthed?.(res.user); onClose?.(); }
+          else setError(res?.message || 'Invalid credentials');
+        } catch {
+          setError('Login failed');
+        }
+      } else {
+        setError(err.message || 'Login failed');
+      }
+    }
     finally{ setLoading(false); }
   };
+  
   const submitRegister = async (e)=>{
     e?.preventDefault?.();
     setError(''); setLoading(true);
     try{
-      const res = await window.electronAPI?.register?.(regForm);
-      if (res?.ok){ onAuthed?.(res.user); onClose?.(); }
-      else setError(res?.message || 'Registration failed');
-    }catch{ setError('Registration failed'); }
+      // Try backend API first
+      const response = await authAPI.register({
+        email: regForm.email,
+        username: regForm.username,
+        password: regForm.password
+      });
+      
+      if (response.success && response.data?.user) {
+        onAuthed?.(response.data.user);
+        onClose?.();
+      } else {
+        setError(response.message || 'Registration failed');
+      }
+    } catch(err) {
+      // Fallback to Electron API if backend fails
+      if (window.electronAPI?.register) {
+        try {
+          const res = await window.electronAPI.register(regForm);
+          if (res?.ok) { onAuthed?.(res.user); onClose?.(); }
+          else setError(res?.message || 'Registration failed');
+        } catch {
+          setError('Registration failed');
+        }
+      } else {
+        setError(err.message || 'Registration failed');
+      }
+    }
     finally{ setLoading(false); }
   };
 
@@ -76,7 +123,7 @@ export default function Auth({ isOpen, onClose, onAuthed }){
                 </label>
                 {error && <div className="text-xs text-red-400">{error}</div>}
                 <button type="submit" disabled={loading} className="w-full rounded-md bg-blue-600 hover:bg-blue-500 py-2 font-semibold disabled:opacity-60">Sign in</button>
-                <div className="text-xs text-gray-400 underline decoration-dotted cursor-pointer w-fit">Help, I can’t sign in</div>
+                <div className="text-xs text-gray-400 underline decoration-dotted cursor-pointer w-fit">Help, I can't sign in</div>
               </form>
             ) : (
               <form onSubmit={submitRegister} className="mt-4 space-y-3">
@@ -98,7 +145,7 @@ export default function Auth({ isOpen, onClose, onAuthed }){
             </div>
             <div className="text-xs text-gray-400 mt-3 text-center">Scan with your mobile app to sign in securely.</div>
             {tab==='login' && (
-              <div className="text-xs text-gray-400 mt-auto pt-6">Don’t have an account? <span className="underline cursor-pointer" onClick={()=>setTab('register')}>Create a Free Account</span></div>
+              <div className="text-xs text-gray-400 mt-auto pt-6">Don't have an account? <span className="underline cursor-pointer" onClick={()=>setTab('register')}>Create a Free Account</span></div>
             )}
           </div>
         </div>

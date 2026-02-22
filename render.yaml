@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: cosmicwell-backend
+    root_dir: backend
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3001
